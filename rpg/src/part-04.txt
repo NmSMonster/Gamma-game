@@ -1,0 +1,262 @@
+    addToast(`Wyposażono: ${item.name}`, RARITY_COLOR[item.rarity]);
+  }
+  function useItem(id, inCombat = false) {
+    const item = ITEMS[id];
+    if (!item || item.type !== 'mikstura' || !hasItem(id)) return false;
+    const d = derivedStats();
+    if (item.heal) {
+      if (player.hp >= d.maxHp) { addToast('Masz pełnię zdrowia.', '#a6a59d'); return false; }
+      player.hp = Math.min(d.maxHp, player.hp + item.heal);
+      addToast(`Odzyskano ${item.heal} HP.`, '#8fc487');
+    }
+    if (item.restore) {
+      if (player.resource >= d.maxResource) { addToast(`${d.resourceName} jest pełna.`, '#a6a59d'); return false; }
+      player.resource = Math.min(d.maxResource, player.resource + item.restore);
+      addToast(`Odzyskano ${item.restore}: ${d.resourceName}.`, '#78b6c8');
+    }
+    if (item.antidote) {
+      if (combat) {
+        combat.playerStatuses = combat.playerStatuses.filter(s => !['poison','bleed'].includes(s.type));
+        logCombat('Odtrutka oczyszcza krew.');
+      }
+      addToast('Usunięto truciznę i krwawienie.', '#9ac79a');
+    }
+    removeItem(id, 1);
+    if (inCombat) endPlayerTurn();
+    return true;
+  }
+
+  function xpNeeded(level = player.level) { return 50 + (level - 1) * 45; }
+  function gainXP(amount, reason = '') {
+    player.xp += amount;
+    addToast(`+${amount} XP${reason ? ` — ${reason}` : ''}`, '#b9a86b');
+    while (player.xp >= xpNeeded()) {
+      player.xp -= xpNeeded();
+      player.level++;
+      player.levelPoints++;
+      levelReturnMode = mode === 'combat' ? 'combat' : 'explore';
+      recalcVitals(true);
+      addToast(`Poziom ${player.level}!`, '#e0be61', 4);
+    }
+  }
+  function maybeOpenLevelUp() {
+    if (player.levelPoints > 0 && mode === 'explore') setMode('levelup');
+  }
+
+  // ---------------------------------------------------------------------------
+  // TESTY K20 I INTERAKCJE
+  // ---------------------------------------------------------------------------
+  function skillCheck(attr, dc, label, onSuccess, onFail, extraBonus = 0) {
+    const roll = rollDie(20);
+    let bonus = mod(effectiveAttr(attr));
+    if (player.origin === 'acolyte' && ['int','wil'].includes(attr)) bonus += 2;
+    bonus += extraBonus;
+    const total = roll + bonus;
+    const success = roll === 20 || (roll !== 1 && total >= dc);
+    diceBanner = { roll, bonus, total, dc, label, success, until: performance.now() + 2600 };
+    addToast(`${label}: k20 ${roll} ${formatSigned(bonus)} = ${total} vs ${dc}`, success ? '#8fc487' : '#c46f70', 3.2);
+    if (success) onSuccess && onSuccess({ roll, bonus, total });
+    else onFail && onFail({ roll, bonus, total });
+    return success;
+  }
+
+  function nearestInteractable() {
+    const reg = currentRegion();
+    const candidates = [];
+    for (const npc of reg.npcs) candidates.push({ ...npc, category: 'npc' });
+    for (const obj of reg.objects) {
+      if (obj.hiddenBy && !isObjectDone(reg.id, obj.hiddenBy)) continue;
+      candidates.push({ ...obj, category: 'object' });
+    }
+    return candidates.filter(o => Math.hypot(o.x - player.x, o.y - player.y) < 28).sort((a,b) => Math.hypot(a.x-player.x,a.y-player.y) - Math.hypot(b.x-player.x,b.y-player.y))[0] || null;
+  }
+
+  function interact() {
+    if (mode !== 'explore') return;
+    const target = nearestInteractable();
+    if (!target) { addToast('Nie ma tu nic, co odpowiada na dotyk.', '#96978f'); return; }
+    if (target.category === 'npc') interactNpc(target);
+    else interactObject(target);
+  }
+
+  function interactObject(obj) {
+    const reg = currentRegion();
+    const done = isObjectDone(reg.id, obj.id);
+    if (obj.type === 'note') {
+      if (!done) { setObjectDone(reg.id, obj.id); gainXP(12, 'fragment historii'); }
+      openModal(obj.title, obj.text, [{ label: 'Zapamiętaj', action: () => closeModal() }]);
+      return;
+    }
+    if (obj.type === 'shrine') {
+      if (done) {
+        openModal(obj.title, `${obj.text}\n\nŻar już odpowiedział na twoją modlitwę.`, [{ label: 'Odejdź', action: () => closeModal() }]);
+      } else {
+        openModal(obj.title, `${obj.text}\n\nMożesz poddać wolę próbie (ST 11), aby odzyskać siły.`, [
+          { label: 'Dotknij kamienia', action: () => { closeModal(); skillCheck('wil', 11, 'Próba Woli', () => { setObjectDone(reg.id,obj.id); recalcVitals(true); gainXP(10,'kapliczka'); addToast('Kapliczka przywraca wszystkie siły.', '#80b6c4', 3.2); }, () => { player.hp = Math.max(1, player.hp - 3); addToast('Zimno odbiera 3 HP.', '#b76b73'); }); } },
+          { label: 'Odejdź', action: () => closeModal() }
+        ]);
+      }
+      return;
+    }
+    if (obj.type === 'chest') {
+      if (done) { addToast('Skrzynia jest pusta.', '#96978f'); return; }
+      const attr = obj.attr || 'dex';
+      skillCheck(attr, obj.dc || 10, 'Otwarcie skrzyni', () => {
+        setObjectDone(reg.id, obj.id);
+        for (const id of obj.loot || ['health_potion']) addItem(id, 1);
+        const coins = randInt(4, 11) + reg.danger * 3;
+        player.gold += coins;
+        gainXP(10 + reg.danger * 2, 'sekretna skrzynia');
+        openModal('Znaleziony łup', `W skrzyni znajdujesz: ${(obj.loot || ['health_potion']).map(id => ITEMS[id].name).join(', ')} oraz ${coins} monet.`, [{ label: 'Zabierz', action: () => closeModal() }]);
+      }, () => addToast('Zamek pozostaje niewzruszony. Możesz spróbować ponownie.', '#c17b72'));
+      return;
+    }
+    if (obj.type === 'secret') {
+      if (done) { addToast('Ukryte przejście jest otwarte.', '#91a69f'); return; }
+      skillCheck('int', obj.dc || 13, 'Rozpoznanie sekretu', () => {
+        setObjectDone(reg.id, obj.id);
+        setTile(reg, obj.doorX, obj.doorY, TILE_KIND.FLOOR);
+        if (Number.isFinite(obj.doorX2)) setTile(reg, obj.doorX2, obj.doorY, TILE_KIND.FLOOR);
+        reg.cache = null;
+        gainXP(20, 'ukryte przejście');
+        addToast('Kamienna płyta odsuwa się bez dźwięku.', '#78b2c2', 3.4);
+      }, () => addToast('To tylko zimny mur… chyba.', '#92948f'));
+    }
+  }
+
+  function interactNpc(npc) {
+    if (npc.role === 'merchant') {
+      openDialog(npc.name, '„Moneta nie rdzewieje tak szybko jak ludzie. Czego potrzebujesz?”', [
+        { label: 'Pokaż towary', action: () => openShop('Kram Oda', ['health_potion','focus_tonic','antidote','worn_leather']) },
+        { label: 'Sprzedaj kościane żetony', action: () => sellTokens() },
+        { label: 'Odejdź', action: () => closeDialog() }
+      ]);
+    }
+    if (npc.role === 'herbalist') {
+      const gift = !player.flags.herbalistGift;
+      openDialog(npc.name, gift ? '„Mgła zabiera oddech, ale czerwony mech go oddaje. Weź to — pierwszy raz nie kosztuje.”' : '„Na bagnach patrz, gdzie woda nie odbija nieba.”', [
+        ...(gift ? [{ label: 'Przyjmij miksturę', action: () => { player.flags.herbalistGift = true; addItem('health_potion'); addToast('Otrzymano miksturę czerwonego mchu.', '#8fc487'); closeDialog(); } }] : []),
+        { label: 'Kup zioła', action: () => openShop('Kosz zielarki', ['health_potion','focus_tonic','antidote','greater_potion']) },
+        { label: 'Odejdź', action: () => closeDialog() }
+      ]);
+    }
+    if (npc.role === 'smith') {
+      const price = 32 + player.weaponUpgrade * 22;
+      openDialog(npc.name, `„Stal pamięta każde uderzenie. Za ${price} monet przypomnę jej, że ma być ostrzem.”`, [
+        { label: `Wzmocnij broń (${price})`, action: () => { if (player.gold < price) addToast('Za mało monet.', '#c17b72'); else { player.gold -= price; player.weaponUpgrade++; addToast(`Broń wzmocniona do +${player.weaponUpgrade}.`, '#d4b86f'); closeDialog(); } } },
+        { label: 'Kup miecz strażniczy', action: () => openShop('Kuźnia Boruna', ['iron_sword','chain_scraps']) },
+        { label: 'Odejdź', action: () => closeDialog() }
+      ]);
+    }
+    if (npc.role === 'wanderer') {
+      if (!player.flags.wandererQuest) {
+        openDialog(npc.name, 'Twarz pod kapturem jest gładka jak popiół. „W Ruinach Vhal leży pieczęć. Bez niej krypta pozostanie zamknięta. Z nią… być może powinna.”', [
+          { label: 'Przyjmij wskazówkę', action: () => { player.flags.wandererQuest = true; player.quest = 'Odnajdź Pieczęć Vhal w południowej sali ruin.'; addToast('Nowy cel: Pieczęć Vhal.', '#d0b768', 3.5); closeDialog(); } },
+          { label: 'Kim jesteś?', action: () => openDialog(npc.name, '„Kimś, kto pamięta króla sprzed korony. To więcej, niż chciałbym pamiętać.”', [{ label: 'Wróć', action: () => closeDialog() }]) },
+          { label: 'Odejdź', action: () => closeDialog() }
+        ]);
+      } else {
+        const hasSeal = hasItem('vhal_seal');
+        openDialog(npc.name, hasSeal ? '„Pieczęć cię rozpoznała. Teraz otworzy kryptę na wschodzie. Pamiętaj: nie każda korona chce mieć głowę.”' : '„Idź przez las ku ruinom. Strażnik w południowej sali nadal pilnuje Pieczęci.”', [
+          { label: 'Zapytaj o drogę', action: () => openDialog(npc.name, '„Z osady idź na północ przez cmentarzysko, potem na wschód przez las. Ruiny Vhal leżą za nim.”', [{ label: 'Rozumiem', action: () => closeDialog() }]) },
+          { label: 'Odejdź', action: () => closeDialog() }
+        ]);
+      }
+    }
+  }
+
+  function sellTokens() {
+    const qty = player.inventory.bone_token || 0;
+    if (!qty) { addToast('Nie masz kościanych żetonów.', '#a0a098'); return; }
+    const value = qty * ITEMS.bone_token.value;
+    removeItem('bone_token', qty);
+    player.gold += value;
+    addToast(`Sprzedano ${qty} żet. za ${value} monet.`, '#d1b568');
+    closeDialog();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DIALOGI, MODALE I SKLEP
+  // ---------------------------------------------------------------------------
+  function openDialog(title, text, choices) {
+    dialog = { title, text, choices };
+    setMode('dialog');
+  }
+  function closeDialog() { dialog = null; setMode('explore'); }
+  function openModal(title, text, choices = [{ label:'Zamknij', action:() => closeModal() }]) {
+    modal = { title, text, choices };
+    setMode('modal');
+  }
+  function closeModal() { modal = null; setMode('explore'); maybeOpenLevelUp(); }
+  function openShop(title, items) { shop = { title, items }; closeDialog(); setMode('shop'); }
+  function closeShop() { shop = null; setMode('explore'); }
+  function shopPrice(id) {
+    const base = { health_potion: 12, focus_tonic: 14, antidote: 10, greater_potion: 28, worn_leather: 24, iron_sword: 58, chain_scraps: 30 }[id] || 20;
+    const charismaDiscount = Math.max(0, mod(effectiveAttr('cha'))) * .04 + (player.origin === 'heir' ? .12 : 0);
+    return Math.max(3, Math.round(base * (1 - Math.min(.35, charismaDiscount))));
+  }
+  function buyItem(id) {
+    const price = shopPrice(id);
+    if (player.gold < price) { addToast('Za mało monet.', '#c17b72'); return; }
+    player.gold -= price;
+    addItem(id);
+    addToast(`Kupiono: ${ITEMS[id].name}`, RARITY_COLOR[ITEMS[id].rarity]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WALKA TUROWA
+  // ---------------------------------------------------------------------------
+  function startCombat(enemyEntity) {
+    if (mode !== 'explore' || isEnemyDead(currentRegionId, enemyEntity.id)) return;
+    const base = ENEMIES[enemyEntity.type];
+    const pInitRoll = rollDie(20), eInitRoll = rollDie(20);
+    combat = {
+      regionId: currentRegionId,
+      enemyId: enemyEntity.id,
+      enemyType: enemyEntity.type,
+      enemy: { ...base, hpNow: base.hp, maxHp: base.hp },
+      playerStatuses: [],
+      enemyStatuses: [],
+      log: [`Spotkanie: ${base.name}.`, `Inicjatywa: ty ${pInitRoll + derivedStats().initiative}, wróg ${eInitRoll + (base.elite ? 3 : 1)}.`],
+      turn: 'player',
+      nextEnemyAt: 0,
+      originSaveUsed: false,
+      fled: false
+    };
+    const playerInit = pInitRoll + derivedStats().initiative;
+    const enemyInit = eInitRoll + (base.elite ? 3 : 1);
+    setMode('combat');
+    diceBanner = { roll: pInitRoll, bonus: derivedStats().initiative, total: playerInit, dc: enemyInit, label: 'Inicjatywa', success: playerInit >= enemyInit, until: performance.now() + 2300 };
+    if (enemyInit > playerInit) {
+      combat.turn = 'enemy';
+      combat.nextEnemyAt = performance.now() + 900;
+    }
+  }
+
+  function logCombat(text) {
+    if (!combat) return;
+    combat.log.push(text);
+    if (combat.log.length > 7) combat.log.shift();
+  }
+  function statusName(type) { return ({ poison:'trucizna', bleed:'krwawienie', stun:'ogłuszenie', guard:'osłona', dodge:'unik', ward:'bariera' })[type] || type; }
+  function addStatus(list, type, turns, potency = 1) {
+    const existing = list.find(s => s.type === type);
+    if (existing) { existing.turns = Math.max(existing.turns, turns); existing.potency = Math.max(existing.potency, potency); }
+    else list.push({ type, turns, potency });
+  }
+  function tickStatuses(side) {
+    const list = side === 'player' ? combat.playerStatuses : combat.enemyStatuses;
+    const target = side === 'player' ? player : combat.enemy;
+    let stunned = false;
+    for (const s of [...list]) {
+      if (s.type === 'poison' || s.type === 'bleed') {
+        const dmg = s.potency;
+        if (side === 'player') player.hp -= dmg; else combat.enemy.hpNow -= dmg;
+        logCombat(`${side === 'player' ? 'Ty' : combat.enemy.name}: ${statusName(s.type)} zadaje ${dmg}.`);
+      }
+      if (s.type === 'stun') { stunned = true; logCombat(`${side === 'player' ? 'Tracisz' : 'Wróg traci'} turę przez ogłuszenie.`); }
+      s.turns--;
+    }
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].turns <= 0) list.splice(i, 1);
+    if (side === 'player' && player.hp <= 0) handlePlayerDefeat();
+    if (side === 'enemy' && combat.enemy.hpNow <= 0) winCombat();
