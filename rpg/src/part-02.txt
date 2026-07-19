@@ -1,0 +1,249 @@
+    rust_sword: { name: 'Zardzewiały miecz', type: 'broń', slot: 'weapon', rarity: 'zwykły', attack: 1, dice: [1, 6], stat: 'str', desc: 'Ciężki, lecz nadal ostry.' },
+    grave_dagger: { name: 'Sztylet grabarza', type: 'broń', slot: 'weapon', rarity: 'zwykły', attack: 1, dice: [1, 4], stat: 'dex', crit: 1, desc: 'Lekki i pewny w dłoni.' },
+    ash_staff: { name: 'Laska z jesionu', type: 'broń', slot: 'weapon', rarity: 'zwykły', attack: 1, dice: [1, 4], stat: 'int', desc: 'Prowadzi chłód zaklęć.' },
+    black_bow: { name: 'Czarny łuk', type: 'broń', slot: 'weapon', rarity: 'zwykły', attack: 1, dice: [1, 6], stat: 'dex', desc: 'Cięciwa nie wydaje dźwięku.' },
+    iron_sword: { name: 'Miecz strażniczy', type: 'broń', slot: 'weapon', rarity: 'rzadki', attack: 3, dice: [1, 8], stat: 'str', desc: 'Ocalał z upadku Vhal.' },
+    moon_knife: { name: 'Nóż księżycowy', type: 'broń', slot: 'weapon', rarity: 'rzadki', attack: 3, dice: [1, 6], stat: 'dex', crit: 2, desc: 'Odbija światło, którego nie ma.' },
+    frost_wand: { name: 'Różdżka szronu', type: 'broń', slot: 'weapon', rarity: 'rzadki', attack: 3, dice: [1, 6], stat: 'int', maxRes: 3, desc: 'Wewnątrz pulsuje zimny błękit.' },
+    chain_scraps: { name: 'Łatana kolczuga', type: 'pancerz', slot: 'armor', rarity: 'zwykły', defense: 2, desc: 'Ciężka, ale skuteczna.' },
+    worn_leather: { name: 'Wytarta skóra', type: 'pancerz', slot: 'armor', rarity: 'zwykły', defense: 1, desc: 'Nie krępuje ruchów.' },
+    worn_robe: { name: 'Szata nowicjusza', type: 'pancerz', slot: 'armor', rarity: 'zwykły', defense: 0, maxRes: 3, desc: 'Wyszyta znakami skupienia.' },
+    vhal_plate: { name: 'Płyty Vhal', type: 'pancerz', slot: 'armor', rarity: 'rzadki', defense: 4, maxHp: 4, desc: 'Pociemniałe, lecz niezłamane.' },
+    swamp_charm: { name: 'Bagienny amulet', type: 'artefakt', slot: 'artifact', rarity: 'rzadki', wil: 1, poisonRes: 1, desc: 'Pachnie miętą i deszczem.' },
+    cold_eye: { name: 'Zimne Oko', type: 'artefakt', slot: 'artifact', rarity: 'przeklęty', int: 2, wil: 1, maxHp: -3, desc: 'Pozwala dostrzec ślady Otchłani.' },
+    king_ember: { name: 'Żar bezimiennego króla', type: 'artefakt', slot: 'artifact', rarity: 'legendarny', str: 1, int: 1, wil: 2, maxHp: 6, desc: 'Nie gaśnie nawet w zamkniętej dłoni.' },
+    health_potion: { name: 'Mikstura czerwonego mchu', type: 'mikstura', rarity: 'zwykły', heal: 14, desc: 'Przywraca 14 HP.' },
+    greater_potion: { name: 'Mikstura żaru', type: 'mikstura', rarity: 'rzadki', heal: 26, desc: 'Przywraca 26 HP.' },
+    focus_tonic: { name: 'Tonik skupienia', type: 'mikstura', rarity: 'zwykły', restore: 10, desc: 'Odnawia 10 many lub wytrzymałości.' },
+    antidote: { name: 'Odtrutka zielarki', type: 'mikstura', rarity: 'zwykły', antidote: true, desc: 'Usuwa truciznę i krwawienie.' },
+    vhal_seal: { name: 'Pieczęć Vhal', type: 'klucz', rarity: 'legendarny', desc: 'Otwiera drogę do Krypty Zmierzchu.' },
+    bone_token: { name: 'Kościany żeton', type: 'łup', rarity: 'zwykły', value: 5, desc: 'Handlarz zapłaci za niego kilka monet.' }
+  };
+
+  const RARITY_COLOR = { zwykły: '#c6c3b8', rzadki: '#70a8bd', przeklęty: '#b16b9c', legendarny: '#d5a94a' };
+
+  const ENEMIES = {
+    wisp: { name: 'Błędny płomyk', hp: 16, attack: 3, defense: 11, dice: [1, 5], xp: 18, gold: [2, 5], color: '#73b5c2', status: 'stun', statusChance: .12 },
+    graveHound: { name: 'Ogar mogilny', hp: 21, attack: 4, defense: 12, dice: [1, 6], xp: 23, gold: [3, 7], color: '#77786c', status: 'bleed', statusChance: .18 },
+    rootling: { name: 'Korzeńca', hp: 24, attack: 4, defense: 11, dice: [1, 7], xp: 24, gold: [2, 6], color: '#557056', status: 'stun', statusChance: .12 },
+    bogShade: { name: 'Topielny cień', hp: 22, attack: 5, defense: 12, dice: [1, 6], xp: 27, gold: [4, 8], color: '#4d7d75', status: 'poison', statusChance: .25 },
+    hollow: { name: 'Pusty strażnik', hp: 28, attack: 6, defense: 13, dice: [1, 7], xp: 31, gold: [6, 11], color: '#7a7973', status: 'bleed', statusChance: .16 },
+    sealGuardian: { name: 'Strażnik Pieczęci', hp: 38, attack: 7, defense: 14, dice: [1, 8], xp: 55, gold: [15, 24], color: '#8c6056', status: 'stun', statusChance: .18, elite: true },
+    boneSentinel: { name: 'Kościany wartownik', hp: 31, attack: 7, defense: 13, dice: [1, 8], xp: 36, gold: [8, 13], color: '#aaa28e', status: 'bleed', statusChance: .14 },
+    nameless: { name: 'Bezimienny Król', hp: 58, attack: 8, defense: 15, dice: [1, 10], xp: 100, gold: [30, 45], color: '#7f3940', status: 'poison', statusChance: .20, boss: true, elite: true }
+  };
+
+  const CLASS_ABILITIES = {
+    warrior: [
+      { id: 'cleave', name: 'Koszące cięcie', level: 1, cost: 4, desc: 'Mocny cios; może wywołać krwawienie.' },
+      { id: 'ashGuard', name: 'Tarcza popiołu', level: 2, cost: 3, desc: 'Zmniejsza obrażenia następnego ataku.' }
+    ],
+    rogue: [
+      { id: 'venom', name: 'Jadowite ostrze', level: 1, cost: 4, desc: 'Cios i trucizna przez 3 tury.' },
+      { id: 'vanish', name: 'Zniknięcie', level: 2, cost: 3, desc: 'Gwarantuje unik następnego ciosu.' }
+    ],
+    mage: [
+      { id: 'frost', name: 'Pocisk szronu', level: 1, cost: 5, desc: 'Silna magia; szansa na ogłuszenie.' },
+      { id: 'ward', name: 'Zimna bariera', level: 2, cost: 4, desc: 'Bariera pochłania część obrażeń.' }
+    ],
+    hunter: [
+      { id: 'aimed', name: 'Mierzony strzał', level: 1, cost: 4, desc: 'Większa szansa trafienia krytycznego.' },
+      { id: 'snare', name: 'Sidła', level: 2, cost: 3, desc: 'Zadaje obrażenia i ogłusza.' }
+    ]
+  };
+
+  // ---------------------------------------------------------------------------
+  // KREATOR POSTACI
+  // ---------------------------------------------------------------------------
+  const creator = {
+    step: 0,
+    race: 'human',
+    classId: 'warrior',
+    origin: 'ashes',
+    attrs: { str: 8, dex: 8, con: 8, int: 8, wil: 8, cha: 8 },
+    points: 12
+  };
+
+  function resetCreator() {
+    creator.step = 0;
+    creator.race = 'human';
+    creator.classId = 'warrior';
+    creator.origin = 'ashes';
+    creator.attrs = { str: 8, dex: 8, con: 8, int: 8, wil: 8, cha: 8 };
+    creator.points = 12;
+    nameInput.value = 'Wędrowiec';
+  }
+
+  function createPlayerFromCreator() {
+    const attrs = { ...creator.attrs };
+    const race = RACES[creator.race];
+    const origin = ORIGINS[creator.origin];
+    for (const [k, v] of Object.entries(race.bonus || {})) attrs[k] += v;
+    for (const [k, v] of Object.entries(origin.bonus || {})) attrs[k] += v;
+    if (creator.race === 'human') {
+      const ordered = Object.keys(attrs).sort((a, b) => attrs[a] - attrs[b]);
+      attrs[ordered[0]] += 1;
+      attrs[ordered[1]] += 1;
+    }
+    const cl = CLASSES[creator.classId];
+    player = {
+      name: (nameInput.value.trim() || 'Wędrowiec').slice(0, 18),
+      race: creator.race,
+      classId: creator.classId,
+      origin: creator.origin,
+      attrs,
+      level: 1,
+      xp: 0,
+      gold: 24,
+      hp: 1,
+      resource: 1,
+      inventory: { [cl.weapon]: 1, [cl.armor]: 1, health_potion: 2, focus_tonic: 1 },
+      equipment: { weapon: cl.weapon, armor: cl.armor, artifact: null },
+      weaponUpgrade: 0,
+      x: 24 * TILE + 8,
+      y: 34 * TILE + 8,
+      dir: 'up',
+      levelPoints: 0,
+      regionKills: {},
+      quest: 'Porozmawiaj z Wędrowcem w Osadzie Popiołów.',
+      flags: { ashesSaveUsed: false, herbalistGift: false, wandererQuest: false, gameComplete: false },
+      quickSlots: ['health_potion', 'focus_tonic']
+    };
+    persistent = freshPersistent();
+    currentRegionId = 0;
+    world = buildWorld();
+    recalcVitals(true);
+    persistent.discoveredRegions[0] = true;
+    revealAroundPlayer(true);
+    setMode('explore');
+    openModal('Pierwszy krok', 'Dotarłeś do Osady Popiołów. Wędrowiec stojący przy studni zna drogę do ruin. Poruszaj się d-padem lub WASD, a przyciskiem AKCJA rozmawiaj i badaj obiekty.', [{ label: 'Wyruszam', action: () => closeModal() }]);
+    saveGame('nowa gra');
+  }
+
+  // ---------------------------------------------------------------------------
+  // ŚWIAT I REGIONY
+  // ---------------------------------------------------------------------------
+  const REGION_DEFS = [
+    { id: 0, name: 'Osada Popiołów', biome: 'settlement', wx: 0, wy: 1, seed: 101, danger: 0, desc: 'Ostatnie paleniska pośród mgły.' },
+    { id: 1, name: 'Cmentarzysko Kruków', biome: 'cemetery', wx: 0, wy: 0, seed: 203, danger: 1, desc: 'Nagrobki zwrócone ku północy.' },
+    { id: 2, name: 'Mroczny Las', biome: 'forest', wx: 1, wy: 0, seed: 307, danger: 1, desc: 'Drzewa szepczą głosami bez właścicieli.' },
+    { id: 3, name: 'Bagna Szeptów', biome: 'swamp', wx: 1, wy: 1, seed: 409, danger: 2, desc: 'Woda pamięta każdy krok.' },
+    { id: 4, name: 'Ruiny Vhal', biome: 'ruins', wx: 2, wy: 0, seed: 503, danger: 2, desc: 'Miasto, które zamknęło własne bramy.' },
+    { id: 5, name: 'Krypta Zmierzchu', biome: 'crypt', wx: 2, wy: 1, seed: 601, danger: 3, desc: 'Pod kamieniem wciąż bije obce serce.' }
+  ];
+
+  function freshPersistent() {
+    return {
+      discoveredRegions: { 0: true },
+      enemiesDead: {},
+      objects: {},
+      fog: {},
+      special: { endingSeen: false }
+    };
+  }
+
+  function regionByWorld(wx, wy) { return REGION_DEFS.find(r => r.wx === wx && r.wy === wy); }
+  function exitsFor(def) {
+    const exits = [];
+    const neighbors = [
+      ['north', def.wx, def.wy - 1], ['south', def.wx, def.wy + 1],
+      ['west', def.wx - 1, def.wy], ['east', def.wx + 1, def.wy]
+    ];
+    for (const [side, wx, wy] of neighbors) {
+      const target = regionByWorld(wx, wy);
+      if (target) exits.push({ side, target: target.id });
+    }
+    return exits;
+  }
+
+  function buildWorld() {
+    return REGION_DEFS.map(def => generateRegion(def));
+  }
+
+  function generateRegion(def) {
+    const rng = mulberry32(def.seed);
+    const grid = new Uint8Array(REGION_W * REGION_H);
+    grid.fill(TILE_KIND.GROUND);
+    const reg = { ...def, grid, exits: exitsFor(def), cache: null, enemies: [], objects: [], npcs: [], torches: [], explored: new Uint8Array(REGION_W * REGION_H) };
+
+    // Obramowanie regionu. Bramy są wycinane niżej.
+    for (let x = 0; x < REGION_W; x++) {
+      grid[x] = TILE_KIND.BLOCK;
+      grid[(REGION_H - 1) * REGION_W + x] = TILE_KIND.BLOCK;
+    }
+    for (let y = 0; y < REGION_H; y++) {
+      grid[y * REGION_W] = TILE_KIND.BLOCK;
+      grid[y * REGION_W + REGION_W - 1] = TILE_KIND.BLOCK;
+    }
+
+    if (def.biome === 'settlement') generateSettlement(reg, rng);
+    else generateWildRegion(reg, rng);
+
+    carveRoutes(reg);
+    addRegionContent(reg);
+    // Odtwarzamy fizyczny stan odkrytych sekretnych przejść po wczytaniu zapisu.
+    for (const obj of reg.objects) {
+      if (obj.type === 'secret' && isObjectDone(def.id, obj.id)) { setTile(reg, obj.doorX, obj.doorY, TILE_KIND.FLOOR); if (Number.isFinite(obj.doorX2)) setTile(reg, obj.doorX2, obj.doorY, TILE_KIND.FLOOR); }
+    }
+    restoreFog(reg);
+    return reg;
+  }
+
+  function setTile(reg, x, y, kind) {
+    if (x >= 0 && y >= 0 && x < REGION_W && y < REGION_H) reg.grid[y * REGION_W + x] = kind;
+  }
+  function getTile(reg, x, y) {
+    if (x < 0 || y < 0 || x >= REGION_W || y >= REGION_H) return TILE_KIND.BLOCK;
+    return reg.grid[y * REGION_W + x];
+  }
+  function clearArea(reg, cx, cy, r = 2, kind = TILE_KIND.GROUND) {
+    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (Math.hypot(x - cx, y - cy) <= r + .35) setTile(reg, x, y, kind);
+  }
+  function fillRectTiles(reg, x, y, w, h, kind) {
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) setTile(reg, xx, yy, kind);
+  }
+
+  function generateSettlement(reg, rng) {
+    fillRectTiles(reg, 2, 2, REGION_W - 4, REGION_H - 4, TILE_KIND.GROUND);
+    fillRectTiles(reg, 22, 1, 4, REGION_H - 2, TILE_KIND.ROAD);
+    fillRectTiles(reg, 1, 26, REGION_W - 2, 5, TILE_KIND.ROAD);
+    const houses = [
+      [5, 8, 12, 10, 0], [30, 7, 12, 11, 1], [5, 36, 13, 11, 2], [30, 36, 12, 12, 3]
+    ];
+    for (const [x, y, w, h, doorSide] of houses) {
+      fillRectTiles(reg, x, y, w, h, TILE_KIND.WALL);
+      fillRectTiles(reg, x + 1, y + 1, w - 2, h - 2, TILE_KIND.FLOOR);
+      if (doorSide % 2 === 0) setTile(reg, x + w - 1, y + Math.floor(h / 2), TILE_KIND.FLOOR);
+      else setTile(reg, x, y + Math.floor(h / 2), TILE_KIND.FLOOR);
+    }
+    for (let i = 0; i < 70; i++) {
+      const x = 2 + Math.floor(rng() * (REGION_W - 4));
+      const y = 2 + Math.floor(rng() * (REGION_H - 4));
+      if (getTile(reg, x, y) === TILE_KIND.GROUND && rng() < .34) setTile(reg, x, y, TILE_KIND.BLOCK);
+    }
+    clearArea(reg, 24, 28, 7, TILE_KIND.ROAD);
+    clearArea(reg, 24, 34, 4, TILE_KIND.ROAD);
+  }
+
+  function generateWildRegion(reg, rng) {
+    const density = reg.biome === 'forest' ? .23 : reg.biome === 'swamp' ? .18 : reg.biome === 'ruins' ? .17 : reg.biome === 'crypt' ? .15 : .16;
+    for (let y = 2; y < REGION_H - 2; y++) {
+      for (let x = 2; x < REGION_W - 2; x++) {
+        const n = rng();
+        if (reg.biome === 'swamp' && n < density) setTile(reg, x, y, TILE_KIND.WATER);
+        else if (n < density) setTile(reg, x, y, TILE_KIND.BLOCK);
+      }
+    }
+    if (reg.biome === 'ruins') {
+      for (const [x, y, w, h] of [[6,7,12,9],[29,6,13,11],[8,35,14,12],[30,34,11,13]]) {
+        fillRectTiles(reg, x, y, w, h, TILE_KIND.WALL);
+        fillRectTiles(reg, x + 2, y + 2, w - 4, h - 4, TILE_KIND.FLOOR);
+        const doorX = x + Math.floor(w / 2);
+        setTile(reg, doorX, y + h - 1, TILE_KIND.FLOOR);
+        setTile(reg, doorX, y + h - 2, TILE_KIND.FLOOR);
+      }
+    }
+    if (reg.biome === 'crypt') {
+      gridCryptRooms(reg);
+    }
+    if (reg.biome === 'cemetery') {
