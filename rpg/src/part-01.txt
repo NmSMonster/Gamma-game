@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#090b0d">
+  <title>Królestwo Popiołu — etap I</title>
+  <style>
+    :root {
+      --ink: #d6d1c3;
+      --muted: #8f9188;
+      --blood: #8e2f35;
+      --cold: #62a6b7;
+      --panel: rgba(11, 14, 16, .88);
+      --line: #4e4b43;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      width: 100%; height: 100%; margin: 0; overflow: hidden;
+      background: #07090a; color: var(--ink); touch-action: none;
+      overscroll-behavior: none; user-select: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    #gameWrap { position: fixed; inset: 0; overflow: hidden; background: #07090a; }
+    canvas {
+      display: block; width: 100vw; height: 100vh;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      background: #090b0d; touch-action: none;
+    }
+    #charName {
+      position: fixed; z-index: 20; left: 50%; top: 140px; transform: translateX(-50%);
+      width: min(72vw, 270px); height: 42px; padding: 8px 10px;
+      border: 2px solid #56564f; outline: none; border-radius: 0;
+      background: #111517; color: #e2ddcf; text-align: center;
+      font: 700 16px/1 ui-monospace, monospace; letter-spacing: .5px;
+      box-shadow: 0 0 0 3px #080a0b, 0 6px 18px rgba(0,0,0,.5);
+      display: none; user-select: text; touch-action: manipulation;
+    }
+    #charName:focus { border-color: #7898a2; }
+    #touchControls {
+      position: fixed; z-index: 12; inset: 0; pointer-events: none;
+      transition: opacity .15s linear;
+    }
+    #touchControls.hidden { opacity: 0; visibility: hidden; }
+    .pad, .actions { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom)); width: 174px; height: 174px; pointer-events: none; }
+    .pad { left: 5px; }
+    .actions { right: 5px; }
+    .touch-btn {
+      position: absolute; display: grid; place-items: center; pointer-events: auto;
+      border: 2px solid rgba(156,156,145,.48); border-radius: 12px;
+      background: rgba(15,19,20,.61); color: rgba(235,230,216,.9);
+      font: 800 12px/1 ui-monospace, monospace; letter-spacing: .5px;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,.45), 0 3px 10px rgba(0,0,0,.35);
+      backdrop-filter: blur(2px); touch-action: none;
+    }
+    .touch-btn.active, .touch-btn:active { background: rgba(91,40,42,.78); border-color: rgba(221,187,177,.75); transform: translateY(1px); }
+    .dir { width: 54px; height: 54px; font-size: 22px; }
+    .up { left: 60px; top: 0; } .left { left: 6px; top: 56px; }
+    .down { left: 60px; top: 112px; } .right { left: 114px; top: 56px; }
+    .act { width: 62px; height: 62px; }
+    .attack { right: 8px; top: 37px; width: 72px; height: 72px; border-radius: 50%; font-size: 14px; color: #f0d7ce; border-color: rgba(175,76,79,.75); }
+    .interact { left: 12px; top: 16px; }
+    .inventory { left: 2px; bottom: 10px; }
+    .map { right: 11px; bottom: 0; width: 58px; height: 48px; }
+    #rotate {
+      display: none; position: fixed; z-index: 50; inset: 0; place-items: center;
+      padding: 32px; text-align: center; background: #090b0d; color: #d6d1c3;
+      font: 700 17px/1.5 ui-monospace, monospace;
+    }
+    @media (orientation: landscape) and (max-height: 560px) { #rotate { display: grid; } }
+    @media (pointer: fine) { .touch-btn { opacity: .52; } }
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <canvas id="game" width="360" height="640" aria-label="Gra Królestwo Popiołu"></canvas>
+    <input id="charName" maxlength="18" autocomplete="off" spellcheck="false" aria-label="Imię postaci" value="Wędrowiec">
+
+    <div id="touchControls" class="hidden" aria-label="Sterowanie dotykowe">
+      <div class="pad">
+        <button class="touch-btn dir up" data-dir="up" aria-label="Góra">▲</button>
+        <button class="touch-btn dir left" data-dir="left" aria-label="Lewo">◀</button>
+        <button class="touch-btn dir down" data-dir="down" aria-label="Dół">▼</button>
+        <button class="touch-btn dir right" data-dir="right" aria-label="Prawo">▶</button>
+      </div>
+      <div class="actions">
+        <button class="touch-btn act interact" data-action="interact" aria-label="Interakcja">AKCJA</button>
+        <button class="touch-btn act inventory" data-action="inventory" aria-label="Ekwipunek">TORBA</button>
+        <button class="touch-btn act map" data-action="map" aria-label="Mapa">MAPA</button>
+        <button class="touch-btn act attack" data-action="attack" aria-label="Atak">ATAK</button>
+      </div>
+    </div>
+    <div id="rotate">Obróć telefon do pionu.<br>Królestwo Popiołu najlepiej przemierzać w orientacji pionowej.</div>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // USTAWIENIA SILNIKA
+  // ---------------------------------------------------------------------------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const nameInput = document.getElementById('charName');
+  const touchControls = document.getElementById('touchControls');
+  ctx.imageSmoothingEnabled = false;
+
+  const VW = 360;
+  let VH = 640;
+  const TILE = 16;
+  const REGION_W = 48;
+  const REGION_H = 56;
+  const SAVE_KEY = 'krolestwo_popiolu_etap1_v1';
+  const SAVE_VERSION = 1;
+  const TAU = Math.PI * 2;
+
+  const TILE_KIND = Object.freeze({ GROUND: 0, BLOCK: 1, WATER: 2, ROAD: 3, FLOOR: 4, WALL: 5 });
+  const MODES_WITH_CONTROLS = new Set(['explore']);
+
+  let mode = 'title';
+  let previousMode = 'explore';
+  let uiButtons = [];
+  let lastTime = performance.now();
+  let gameTime = 62;
+  let transitionLock = 0;
+  let attackAnim = 0;
+  let stepClock = 0;
+  let fogClock = 0;
+  let autosaveFlash = 0;
+  let selectedItemId = null;
+  let inventoryPage = 0;
+  let abilityMenu = false;
+  let itemMenu = false;
+  let shop = null;
+  let dialog = null;
+  let modal = null;
+  let diceBanner = null;
+  let levelReturnMode = 'explore';
+  let currentRegionId = 0;
+  let camera = { x: 0, y: 0 };
+  let particles = [];
+  let toastQueue = [];
+  let world = [];
+  let player = null;
+  let persistent = null;
+  let combat = null;
+
+  const keys = Object.create(null);
+  const touchDir = { up: false, down: false, left: false, right: false };
+
+  const lightCanvas = document.createElement('canvas');
+  const lctx = lightCanvas.getContext('2d');
+
+  function resizeCanvas() {
+    const ratio = innerHeight / Math.max(1, innerWidth);
+    VH = Math.max(600, Math.min(800, Math.round(VW * ratio)));
+    canvas.width = VW;
+    canvas.height = VH;
+    lightCanvas.width = VW;
+    lightCanvas.height = VH;
+    ctx.imageSmoothingEnabled = false;
+    nameInput.style.top = `${Math.round(innerHeight * 0.22)}px`;
+  }
+  addEventListener('resize', resizeCanvas, { passive: true });
+  resizeCanvas();
+
+  // ---------------------------------------------------------------------------
+  // NARZĘDZIA
+  // ---------------------------------------------------------------------------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const mod = a => Math.floor((a - 10) / 2);
+  const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+  const choose = arr => arr[Math.floor(Math.random() * arr.length)];
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const px = n => Math.round(n);
+
+  function hash2(x, y, seed = 0) {
+    let h = Math.imul(x ^ seed, 374761393) + Math.imul(y ^ (seed << 1), 668265263);
+    h = (h ^ (h >>> 13)) >>> 0;
+    return ((Math.imul(h, 1274126177) ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function mulberry32(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function rollDie(sides) { return randInt(1, sides); }
+  function formatSigned(n) { return n >= 0 ? `+${n}` : `${n}`; }
+  function wrapText(text, maxChars) {
+    const words = String(text).split(/\s+/);
+    const out = [];
+    let line = '';
+    for (const word of words) {
+      if (!line) line = word;
+      else if ((line + ' ' + word).length <= maxChars) line += ' ' + word;
+      else { out.push(line); line = word; }
+    }
+    if (line) out.push(line);
+    return out;
+  }
+  function drawWrapped(text, x, y, maxChars, lineHeight, color = '#d6d1c3', align = 'left') {
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    const lines = wrapText(text, maxChars);
+    lines.forEach((line, i) => ctx.fillText(line, x, y + i * lineHeight));
+    return y + lines.length * lineHeight;
+  }
+  function panel(x, y, w, h, alpha = .92) {
+    ctx.fillStyle = `rgba(10,13,15,${alpha})`;
+    ctx.fillRect(px(x), px(y), px(w), px(h));
+    ctx.fillStyle = '#45463f';
+    ctx.fillRect(px(x), px(y), px(w), 2);
+    ctx.fillRect(px(x), px(y + h - 2), px(w), 2);
+    ctx.fillRect(px(x), px(y), 2, px(h));
+    ctx.fillRect(px(x + w - 2), px(y), 2, px(h));
+    ctx.fillStyle = '#1b2021';
+    ctx.fillRect(px(x + 3), px(y + 3), px(w - 6), 1);
+  }
+  function titleText(text, y, size = 22, color = '#ded8c9') {
+    ctx.font = `900 ${size}px ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#050607';
+    ctx.fillText(text, VW / 2 + 2, y + 2);
+    ctx.fillStyle = color;
+    ctx.fillText(text, VW / 2, y);
+  }
+  function drawButton(x, y, w, h, label, action, options = {}) {
+    const disabled = !!options.disabled;
+    const active = !!options.active;
+    ctx.fillStyle = disabled ? '#171a1b' : active ? '#553033' : '#202526';
+    ctx.fillRect(px(x), px(y), px(w), px(h));
+    ctx.fillStyle = disabled ? '#343737' : active ? '#a85b5f' : '#68685f';
+    ctx.fillRect(px(x), px(y), px(w), 2);
+    ctx.fillRect(px(x), px(y + h - 2), px(w), 2);
+    ctx.fillRect(px(x), px(y), 2, px(h));
+    ctx.fillRect(px(x + w - 2), px(y), 2, px(h));
+    ctx.fillStyle = disabled ? '#62645f' : options.color || '#ddd7c8';
+    ctx.font = `${options.bold === false ? 600 : 800} ${options.fontSize || 12}px ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lines = String(label).split('\n');
+    lines.forEach((line, i) => ctx.fillText(line, x + w / 2, y + h / 2 + (i - (lines.length - 1) / 2) * (options.lineHeight || 14)));
+    ctx.textBaseline = 'alphabetic';
+    if (!disabled && action) uiButtons.push({ x, y, w, h, action });
+  }
+  function addToast(text, color = '#d8d3c4', seconds = 2.6) {
+    toastQueue.push({ text, color, until: performance.now() + seconds * 1000 });
+    if (toastQueue.length > 5) toastQueue.shift();
+  }
+  function setMode(next, remember = true) {
+    if (remember && mode !== next && !['title', 'creator'].includes(mode)) previousMode = mode;
+    mode = next;
+    touchControls.classList.toggle('hidden', !MODES_WITH_CONTROLS.has(mode));
+    nameInput.style.display = mode === 'creator' && creator.step === 0 ? 'block' : 'none';
+    abilityMenu = false;
+    itemMenu = false;
+    if (mode !== 'explore') {
+      for (const dir of Object.keys(touchDir)) touchDir[dir] = false;
+      document.querySelectorAll('[data-dir]').forEach(btn => btn.classList.remove('active'));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // DANE RPG
+  // ---------------------------------------------------------------------------
+  const ATTRS = [
+    ['str', 'Siła', 'obrażenia, wyważanie'],
+    ['dex', 'Zręczność', 'inicjatywa, uniki'],
+    ['con', 'Kondycja', 'punkty życia'],
+    ['int', 'Inteligencja', 'magia, wiedza'],
+    ['wil', 'Wola', 'odporność, kapliczki'],
+    ['cha', 'Charyzma', 'ceny, rozmowy']
+  ];
+
+  const RACES = {
+    human: { name: 'Człowiek', desc: 'Uparty i wszechstronny. +1 do dwóch najniższych cech.', bonus: {} },
+    shadowElf: { name: 'Elf cienia', desc: '+2 Zręczność, +1 Inteligencja, −1 Kondycja.', bonus: { dex: 2, int: 1, con: -1 } },
+    dwarf: { name: 'Krasnolud', desc: '+2 Kondycja, +1 Wola, −1 Charyzma.', bonus: { con: 2, wil: 1, cha: -1 } },
+    cursed: { name: 'Przeklęty', desc: '+2 Wola, +1 Siła, −1 Charyzma. Widzi zimne ślady.', bonus: { wil: 2, str: 1, cha: -1 } }
+  };
+
+  const CLASSES = {
+    warrior: { name: 'Wojownik', desc: 'Twardy frontowiec. Walczy siłą i wytrzymałością.', hp: 26, res: 15, resource: 'Wytrzymałość', weapon: 'rust_sword', armor: 'chain_scraps' },
+    rogue: { name: 'Łotrzyk', desc: 'Szybki, celny i trudny do pochwycenia.', hp: 21, res: 17, resource: 'Wytrzymałość', weapon: 'grave_dagger', armor: 'worn_leather' },
+    mage: { name: 'Mag', desc: 'Kruchy, lecz włada zimnym błękitem Otchłani.', hp: 18, res: 22, resource: 'Mana', weapon: 'ash_staff', armor: 'worn_robe' },
+    hunter: { name: 'Łowca', desc: 'Zwiadowca walczący na dystans i zastawiający sidła.', hp: 22, res: 18, resource: 'Wytrzymałość', weapon: 'black_bow', armor: 'worn_leather' }
+  };
+
+  const ORIGINS = {
+    ashes: { name: 'Zrodzony z popiołu', desc: '+1 Kondycja i Wola. Raz na walkę przeżywasz cios z 1 HP.', bonus: { con: 1, wil: 1 }, gift: 'Ostatni żar' },
+    exile: { name: 'Banita z pogranicza', desc: '+2 Zręczność. +2 do prób ucieczki.', bonus: { dex: 2 }, gift: 'Krok banity' },
+    acolyte: { name: 'Uczeń zakonu', desc: '+2 Inteligencja. +2 do rozpoznawania magii.', bonus: { int: 2 }, gift: 'Znak wiedzy' },
+    heir: { name: 'Spadkobierca ruin', desc: '+2 Charyzma. Handlarze obniżają ceny.', bonus: { cha: 2 }, gift: 'Stare nazwisko' }
+  };
+
+  const ITEMS = {
