@@ -1,0 +1,192 @@
+      ctx.strokeStyle='#8c6840';ctx.lineWidth=2;ctx.beginPath();ctx.arc(6,0,5,-1.4,1.4);ctx.stroke();
+    }else if(player.classId==='mage'){
+      ctx.fillStyle='#6e543b';ctx.fillRect(5,-7,2,15);ctx.fillStyle='#67aab8';ctx.fillRect(4,-9,4,4);
+    }else{
+      ctx.fillStyle='#a4a59f';ctx.fillRect(6,-8,2,12);ctx.fillStyle='#5f4632';ctx.fillRect(6,4,2,5);ctx.fillStyle='#8a6b46';ctx.fillRect(4,3,6,2);
+    }ctx.restore();
+  }
+
+  function drawEnemySprite(e,sx,sy,scale=1) {
+    const x=px(sx),y=px(sy+Math.sin(gameTime*2+e.phase)*1.2),def=ENEMIES[e.type];
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(x-7*scale,y+7*scale,14*scale,3*scale);
+    if(e.type==='wisp'){
+      ctx.fillStyle='#315d68';ctx.fillRect(x-5,y-2,10,10);ctx.fillStyle=def.color;ctx.fillRect(x-3,y-9,6,9);ctx.fillStyle='#c5eef2';ctx.fillRect(x-1,y-6,2,4);
+    }else if(e.type==='graveHound'){
+      ctx.fillStyle=def.color;ctx.fillRect(x-8,y-4,14,8);ctx.fillRect(x+4,y-8,6,8);ctx.fillStyle='#b85858';ctx.fillRect(x+7,y-6,1,1);ctx.fillRect(x-6,y+3,3,6);ctx.fillRect(x+2,y+3,3,6);
+    }else if(e.type==='rootling'){
+      ctx.fillStyle='#2c3c2c';ctx.fillRect(x-6,y-6,12,13);ctx.fillStyle=def.color;ctx.fillRect(x-8,y-8,16,7);ctx.fillStyle='#9a925e';ctx.fillRect(x-3,y-3,2,2);ctx.fillRect(x+2,y-3,2,2);
+    }else if(e.type==='bogShade'){
+      ctx.fillStyle='#1d3332';ctx.fillRect(x-6,y-7,12,15);ctx.fillStyle=def.color;ctx.fillRect(x-8,y,16,8);ctx.fillStyle='#8ec2b7';ctx.fillRect(x-3,y-4,2,2);ctx.fillRect(x+2,y-4,2,2);
+    }else{
+      const boss=e.type==='nameless';
+      ctx.fillStyle=def.color;ctx.fillRect(x-(boss?8:6),y-(boss?11:8),(boss?16:12),(boss?19:16));
+      ctx.fillStyle='#25282a';ctx.fillRect(x-5,y-13,10,7);
+      ctx.fillStyle=boss?'#d06b58':'#a8b0ae';ctx.fillRect(x-2,y-10,1,1);ctx.fillRect(x+2,y-10,1,1);
+      ctx.fillStyle='#aaa28e';ctx.fillRect(x+6,y-9,2,16);
+      if(boss){ctx.fillStyle='#9b6b3e';ctx.fillRect(x-7,y-17,14,3);ctx.fillRect(x-6,y-20,3,4);ctx.fillRect(x-1,y-21,3,5);ctx.fillRect(x+4,y-20,3,4);}
+    }
+  }
+
+  function drawFogParticles() {
+    ctx.save();
+    for(const p of particles){const a=clamp(p.life/p.maxLife,0,.28);ctx.fillStyle=`rgba(166,181,177,${a})`;ctx.fillRect(px(p.x-20),px(p.y),40,2);ctx.fillRect(px(p.x-8),px(p.y-2),31,2);}
+    ctx.restore();
+  }
+
+  function drawFogOfWar(reg) {
+    const x0=Math.max(0,Math.floor(camera.x/TILE)-1),x1=Math.min(REGION_W-1,Math.ceil((camera.x+VW)/TILE)+1);
+    const y0=Math.max(0,Math.floor(camera.y/TILE)-1),y1=Math.min(REGION_H-1,Math.ceil((camera.y+VH)/TILE)+1);
+    ctx.fillStyle='rgba(3,5,6,.80)';
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)if(!reg.explored[y*REGION_W+x])ctx.fillRect(x*TILE-camera.x,y*TILE-camera.y,TILE+1,TILE+1);
+  }
+
+  function drawLighting(reg) {
+    const cycle=(gameTime%240)/240;
+    const sun=(Math.sin(cycle*TAU-Math.PI/2)+1)/2;
+    const darkness=.18+(1-sun)*.52+(reg.biome==='crypt'?.18:0);
+    lctx.clearRect(0,0,VW,VH);
+    lctx.fillStyle=`rgba(5,8,12,${clamp(darkness,.18,.78)})`;lctx.fillRect(0,0,VW,VH);
+    lctx.globalCompositeOperation='destination-out';
+    const pxs=player.x-camera.x,pys=player.y-camera.y;
+    const radius=(reg.biome==='crypt'?72:90)+(player.race==='cursed'?18:0);
+    let grad=lctx.createRadialGradient(pxs,pys,12,pxs,pys,radius);grad.addColorStop(0,'rgba(0,0,0,.95)');grad.addColorStop(.65,'rgba(0,0,0,.6)');grad.addColorStop(1,'rgba(0,0,0,0)');lctx.fillStyle=grad;lctx.fillRect(pxs-radius,pys-radius,radius*2,radius*2);
+    for(const t of reg.torches){const x=t.x-camera.x,y=t.y-camera.y;const r=46+Math.sin(gameTime*17+t.x)*5;grad=lctx.createRadialGradient(x,y,3,x,y,r);grad.addColorStop(0,'rgba(0,0,0,.88)');grad.addColorStop(1,'rgba(0,0,0,0)');lctx.fillStyle=grad;lctx.fillRect(x-r,y-r,r*2,r*2);}
+    lctx.globalCompositeOperation='source-over';
+    ctx.drawImage(lightCanvas,0,0);
+    if(1-sun>.45){ctx.fillStyle=`rgba(20,40,52,${(1-sun)*.08})`;ctx.fillRect(0,0,VW,VH);}
+  }
+
+  // ---------------------------------------------------------------------------
+  // HUD, MINIMAPA I EKRANY
+  // ---------------------------------------------------------------------------
+  function drawBar(x,y,w,h,value,max,color,bg='#171a1a') {
+    ctx.fillStyle=bg;ctx.fillRect(x,y,w,h);ctx.fillStyle=color;ctx.fillRect(x+1,y+1,Math.max(0,(w-2)*clamp(value/max,0,1)),h-2);ctx.fillStyle='rgba(255,255,255,.16)';ctx.fillRect(x+1,y+1,Math.max(0,(w-2)*clamp(value/max,0,1)),1);ctx.strokeStyle='#4b4c47';ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+  }
+  function drawHud(reg) {
+    panel(5,5,176,58,.76);
+    const d=derivedStats();
+    ctx.textAlign='left';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#e0dbcd';ctx.fillText(`${player.name}  POZ. ${player.level}`,12,19);
+    drawBar(12,25,130,10,player.hp,d.maxHp,'#8d3138');
+    drawBar(12,40,130,8,player.resource,d.maxResource,player.classId==='mage'?'#3c7e9a':'#8a7440');
+    ctx.font='700 9px ui-monospace,monospace';ctx.fillStyle='#d7d0c1';ctx.fillText(`${Math.ceil(player.hp)}/${d.maxHp}`,147,34);ctx.fillStyle='#aeb8b5';ctx.fillText(`${Math.floor(player.resource)}/${d.maxResource}`,147,47);
+    ctx.fillStyle='#a99b6a';ctx.fillText(`XP ${player.xp}/${xpNeeded()}   ◈ ${player.gold}`,12,58);
+    drawMinimap(reg, VW-63, 6, 56, 56);
+    ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle='rgba(220,214,199,.9)';ctx.fillText(reg.name,VW/2,78);
+    drawQuickSlots();
+    if(autosaveFlash>0){ctx.font='700 9px ui-monospace,monospace';ctx.textAlign='right';ctx.fillStyle=`rgba(135,181,164,${clamp(autosaveFlash,0,1)})`;ctx.fillText('ZAPISANO',VW-8,74);}
+  }
+  function drawMinimap(reg,x,y,w,h) {
+    ctx.fillStyle='rgba(8,10,11,.84)';ctx.fillRect(x,y,w,h);ctx.strokeStyle='#626159';ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    const sx=(w-4)/REGION_W,sy=(h-4)/REGION_H;
+    for(let ty=0;ty<REGION_H;ty++)for(let tx=0;tx<REGION_W;tx++)if(reg.explored[ty*REGION_W+tx]){
+      const k=getTile(reg,tx,ty);ctx.fillStyle=tileBlocked(k)?'#444841':k===TILE_KIND.ROAD?'#70634d':'#28362f';ctx.fillRect(x+2+tx*sx,y+2+ty*sy,Math.ceil(sx),Math.ceil(sy));
+    }
+    ctx.fillStyle='#d7c76e';ctx.fillRect(x+2+player.x/TILE*sx-1,y+2+player.y/TILE*sy-1,3,3);
+  }
+  function drawQuickSlots() {
+    const y=VH-202;
+    for(let i=0;i<2;i++){
+      const id=player.quickSlots[i],item=ITEMS[id],x=VW-90+i*40;
+      ctx.fillStyle='rgba(10,13,14,.75)';ctx.fillRect(x,y,34,32);ctx.strokeStyle='#5d5b54';ctx.strokeRect(x+.5,y+.5,33,31);
+      ctx.fillStyle=id==='health_potion'?'#8d3138':'#39768b';ctx.fillRect(x+12,y+7,10,15);ctx.fillStyle='#c5b991';ctx.fillRect(x+14,y+4,6,4);
+      ctx.font='800 9px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle='#e1dbcc';ctx.fillText(`${i+1} ×${player.inventory[id]||0}`,x+17,y+29);
+      uiButtons.push({x,y,w:34,h:32,action:()=>useItem(id)});
+    }
+  }
+  function drawContextHint() {
+    const t=nearestInteractable();if(!t)return;
+    const label=t.category==='npc'?`AKCJA: ${t.name}`:t.type==='chest'?'AKCJA: skrzynia':t.type==='note'?'AKCJA: przeczytaj':t.type==='shrine'?'AKCJA: kapliczka':'AKCJA: zbadaj';
+    ctx.font='800 10px ui-monospace,monospace';const w=Math.min(260,ctx.measureText(label).width+20);ctx.fillStyle='rgba(8,10,11,.8)';ctx.fillRect(VW/2-w/2,VH-236,w,22);ctx.strokeStyle='#53544e';ctx.strokeRect(VW/2-w/2+.5,VH-236.5,w-1,21);ctx.textAlign='center';ctx.fillStyle='#ded8c8';ctx.fillText(label,VW/2,VH-221);
+  }
+
+  function render() {
+    uiButtons=[];
+    ctx.imageSmoothingEnabled=false;
+    ctx.fillStyle='#090b0d';ctx.fillRect(0,0,VW,VH);
+    if(mode==='title') drawTitleScreen();
+    else if(mode==='creator') drawCreator();
+    else if(mode==='explore') drawExplore();
+    else if(mode==='combat') drawCombat();
+    else if(mode==='inventory') drawInventory();
+    else if(mode==='map') drawMap();
+    else if(mode==='dialog') { drawExplore(); drawDialog(); }
+    else if(mode==='modal') { drawExplore(); drawModal(); }
+    else if(mode==='shop') drawShop();
+    else if(mode==='levelup') drawLevelUp();
+    else if(mode==='gameover') drawGameOver();
+    drawDiceBanner();
+    drawToasts();
+  }
+
+  function drawBackdrop() {
+    ctx.fillStyle='#080b0c';ctx.fillRect(0,0,VW,VH);
+    for(let y=0;y<VH;y+=16){ctx.fillStyle=y%32===0?'#0e1314':'#0b0f10';ctx.fillRect(0,y,VW,16);}
+    // Ruiny, martwe drzewa i księżyc — wyłącznie proceduralne kształty.
+    ctx.fillStyle='#1b2427';ctx.fillRect(273,52,42,52);ctx.fillRect(282,34,8,22);ctx.fillRect(302,26,7,30);
+    ctx.fillStyle='#55656a';ctx.fillRect(286,48,5,6);ctx.fillRect(302,43,4,7);
+    ctx.fillStyle='#c2bda7';ctx.fillRect(50,42,32,32);ctx.fillStyle='#080b0c';ctx.fillRect(60,35,33,33);
+    ctx.strokeStyle='#2c3432';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(32,VH);ctx.lineTo(48,185);ctx.lineTo(29,139);ctx.moveTo(47,230);ctx.lineTo(72,173);ctx.moveTo(42,278);ctx.lineTo(17,230);ctx.stroke();
+    for(let i=0;i<18;i++){const x=(i*67+gameTime*2)%420-30,y=100+(i*41)%Math.max(140,VH-170);ctx.fillStyle='rgba(151,168,165,.05)';ctx.fillRect(x,y,80,2);}
+    ctx.fillStyle='rgba(0,0,0,.38)';ctx.fillRect(0,0,VW,VH);
+  }
+
+  function drawTitleScreen() {
+    drawBackdrop();
+    titleText('KRÓLESTWO',116,29,'#d7d1c2');
+    titleText('POPIOŁU',148,34,'#9d474b');
+    ctx.font='700 11px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle='#8f9895';ctx.fillText('MROCZNE RPG · ETAP I',VW/2,174);
+    ctx.fillStyle='#5c372e';ctx.fillRect(VW/2-2,190,4,58);ctx.fillStyle='#d39a55';ctx.fillRect(VW/2-4,184,8,12);ctx.fillStyle='#f0c36a';ctx.fillRect(VW/2-1,181,3,9);
+    const y=Math.max(294,VH*.47);
+    drawButton(62,y,236,48,'NOWA GRA',()=>{resetCreator();setMode('creator');});
+    drawButton(62,y+60,236,48,'KONTYNUUJ',()=>loadGame(),{disabled:!hasSave(),color:'#b9c7c2'});
+    drawButton(92,y+122,176,36,'USUŃ ZAPIS',()=>openTitleDeleteConfirm(),{disabled:!hasSave(),fontSize:10,color:'#b98582'});
+    ctx.font='600 9px ui-monospace,monospace';ctx.fillStyle='#767b78';ctx.textAlign='center';ctx.fillText('WASD / strzałki · E interakcja · spacja atak',VW/2,VH-34);ctx.fillText('Na telefonie użyj przycisków ekranowych',VW/2,VH-20);
+  }
+  function openTitleDeleteConfirm(){
+    // Na ekranie tytułowym używamy prostego potwierdzenia systemowego, aby nie tworzyć stanu bez świata.
+    if(confirm('Usunąć zapis Królestwa Popiołu?')) deleteSave();
+  }
+
+  function drawCreator() {
+    drawBackdrop();
+    panel(15,18,VW-30,VH-36,.94);
+    titleText('KREATOR POSTACI',47,18,'#d8d1c1');
+    ctx.font='700 10px ui-monospace,monospace';ctx.fillStyle='#8d918b';ctx.textAlign='center';ctx.fillText(`KROK ${creator.step+1}/5`,VW/2,66);
+    const contentY=82;
+    if(creator.step===0) drawCreatorRace(contentY);
+    if(creator.step===1) drawCreatorClass(contentY);
+    if(creator.step===2) drawCreatorOrigin(contentY);
+    if(creator.step===3) drawCreatorAttrs(contentY);
+    if(creator.step===4) drawCreatorSummary(contentY);
+    const navY=VH-76;
+    if(creator.step>0) drawButton(28,navY,100,40,'WSTECZ',()=>{creator.step--;setMode('creator',false);},{fontSize:11});
+    if(creator.step<4) drawButton(VW-128,navY,100,40,'DALEJ',()=>{creator.step++;setMode('creator',false);},{fontSize:11,disabled:creator.step===3&&creator.points!==0});
+    else drawButton(VW-154,navY,126,40,'ROZPOCZNIJ',()=>createPlayerFromCreator(),{fontSize:11,color:'#e0c16b'});
+  }
+  function drawCreatorRace(y) {
+    ctx.font='800 14px ui-monospace,monospace';ctx.fillStyle='#d7d1c2';ctx.textAlign='center';ctx.fillText('Imię i rasa',VW/2,y+12);
+    ctx.font='600 10px ui-monospace,monospace';ctx.fillStyle='#929790';ctx.fillText('Wpisz imię w polu powyżej, potem wybierz rasę.',VW/2,y+38);
+    let yy=y+105;
+    Object.entries(RACES).forEach(([id,r])=>{drawButton(35,yy,VW-70,58,`${r.name}\n${r.desc}`,()=>{creator.race=id;},{active:creator.race===id,fontSize:10,lineHeight:15});yy+=66;});
+  }
+  function drawCreatorClass(y) {
+    ctx.font='800 14px ui-monospace,monospace';ctx.fillStyle='#d7d1c2';ctx.textAlign='center';ctx.fillText('Klasa',VW/2,y+12);
+    let yy=y+38;Object.entries(CLASSES).forEach(([id,c])=>{drawButton(35,yy,VW-70,70,`${c.name}\n${c.desc}\nHP bazowe: ${c.hp} · ${c.resource}: ${c.res}`,()=>{creator.classId=id;},{active:creator.classId===id,fontSize:10,lineHeight:15});yy+=78;});
+  }
+  function drawCreatorOrigin(y) {
+    ctx.font='800 14px ui-monospace,monospace';ctx.fillStyle='#d7d1c2';ctx.textAlign='center';ctx.fillText('Pochodzenie',VW/2,y+12);
+    let yy=y+38;Object.entries(ORIGINS).forEach(([id,o])=>{drawButton(35,yy,VW-70,72,`${o.name}\n${o.desc}\nDar: ${o.gift}`,()=>{creator.origin=id;},{active:creator.origin===id,fontSize:9,lineHeight:14});yy+=80;});
+  }
+  function drawCreatorAttrs(y) {
+    ctx.font='800 14px ui-monospace,monospace';ctx.fillStyle='#d7d1c2';ctx.textAlign='center';ctx.fillText(`Atrybuty — pozostało ${creator.points} pkt`,VW/2,y+12);
+    ctx.font='600 9px ui-monospace,monospace';ctx.fillStyle='#969991';ctx.fillText('Zakres przed premiami rasy i pochodzenia: 8–14.',VW/2,y+30);
+    let yy=y+52;
+    for(const [key,name,desc] of ATTRS){
+      ctx.textAlign='left';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#d6d0c1';ctx.fillText(name,43,yy+17);ctx.font='600 8px ui-monospace,monospace';ctx.fillStyle='#858a85';ctx.fillText(desc,43,yy+31);
+      drawButton(220,yy,34,34,'−',()=>{if(creator.attrs[key]>8){creator.attrs[key]--;creator.points++;}},{disabled:creator.attrs[key]<=8,fontSize:18});
+      ctx.textAlign='center';ctx.font='900 15px ui-monospace,monospace';ctx.fillStyle='#e0b968';ctx.fillText(creator.attrs[key],276,yy+22);
+      drawButton(294,yy,34,34,'+',()=>{if(creator.points>0&&creator.attrs[key]<14){creator.attrs[key]++;creator.points--;}},{disabled:creator.points<=0||creator.attrs[key]>=14,fontSize:17});
+      yy+=54;
+    }
+  }
+  function drawCreatorSummary(y) {
