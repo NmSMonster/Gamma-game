@@ -1,0 +1,310 @@
+    return stunned;
+  }
+
+  function attackRoll(attackerBonus, targetDefense, critBonus = 0) {
+    const roll = rollDie(20);
+    const crit = roll >= 20 - critBonus;
+    const hit = crit || (roll !== 1 && roll + attackerBonus >= targetDefense);
+    return { roll, total: roll + attackerBonus, hit, crit };
+  }
+  function rollDamage(dice, bonus = 0) {
+    let total = bonus;
+    for (let i = 0; i < (dice[0] || 1); i++) total += rollDie(dice[1] || 4);
+    return Math.max(1, total);
+  }
+
+  function playerBasicAttack() {
+    if (!canPlayerAct()) return;
+    const d = derivedStats();
+    const res = attackRoll(d.attack, combat.enemy.defense, d.weapon.crit || 0);
+    diceBanner = { roll: res.roll, bonus: d.attack, total: res.total, dc: combat.enemy.defense, label: 'Atak', success: res.hit, until: performance.now() + 2200 };
+    if (!res.hit) logCombat(`Chybiasz (${res.total} vs ${combat.enemy.defense}).`);
+    else {
+      let dmg = rollDamage(d.weapon.dice || [1,4], d.damageMod);
+      if (res.crit) dmg *= 2;
+      combat.enemy.hpNow -= dmg;
+      logCombat(`${res.crit ? 'KRYTYK! ' : ''}Zadajesz ${dmg} obrażeń.`);
+    }
+    if (combat.enemy.hpNow <= 0) winCombat(); else endPlayerTurn();
+  }
+
+  function useAbility(id) {
+    if (!canPlayerAct()) return;
+    const ability = CLASS_ABILITIES[player.classId].find(a => a.id === id && a.level <= player.level);
+    if (!ability) return;
+    if (player.resource < ability.cost) { addToast(`Za mało: ${derivedStats().resourceName}.`, '#c17b72'); return; }
+    player.resource -= ability.cost;
+    const d = derivedStats();
+    let dmg = 0;
+    if (id === 'cleave') {
+      const r = attackRoll(d.attack + 1, combat.enemy.defense);
+      if (r.hit) { dmg = rollDamage([1,10], d.damageMod + 1); if (r.crit) dmg *= 2; combat.enemy.hpNow -= dmg; if (Math.random() < .45) addStatus(combat.enemyStatuses,'bleed',3,2); }
+      logCombat(r.hit ? `Koszące cięcie zadaje ${dmg}.` : 'Koszące cięcie mija cel.');
+    }
+    if (id === 'ashGuard') { addStatus(combat.playerStatuses,'guard',2,5); logCombat('Otacza cię tarcza wirującego popiołu.'); }
+    if (id === 'venom') {
+      const r = attackRoll(d.attack + 1, combat.enemy.defense);
+      if (r.hit) { dmg = rollDamage([1,5], d.damageMod); combat.enemy.hpNow -= dmg; addStatus(combat.enemyStatuses,'poison',3,2); }
+      logCombat(r.hit ? `Jad wnika w ranę (${dmg}).` : 'Jadowite ostrze przecina tylko mgłę.');
+    }
+    if (id === 'vanish') { addStatus(combat.playerStatuses,'dodge',2,1); logCombat('Znikasz w załamaniu cienia.'); }
+    if (id === 'frost') {
+      const bonus = player.level + mod(effectiveAttr('int')) + 3;
+      const r = attackRoll(bonus, combat.enemy.defense);
+      if (r.hit) { dmg = rollDamage([2,6], Math.max(0,mod(effectiveAttr('int')))); combat.enemy.hpNow -= dmg; if (Math.random() < .35) addStatus(combat.enemyStatuses,'stun',1,1); }
+      logCombat(r.hit ? `Pocisk szronu zadaje ${dmg}.` : 'Szron gaśnie przed celem.');
+    }
+    if (id === 'ward') { addStatus(combat.playerStatuses,'ward',3,4); logCombat('Zimna bariera zamyka się wokół ciebie.'); }
+    if (id === 'aimed') {
+      const r = attackRoll(d.attack + 3, combat.enemy.defense, 3);
+      if (r.hit) { dmg = rollDamage(d.weapon.dice || [1,6], d.damageMod + 2); if (r.crit) dmg *= 2; combat.enemy.hpNow -= dmg; }
+      logCombat(r.hit ? `${r.crit ? 'KRYTYK! ' : ''}Mierzony strzał zadaje ${dmg}.` : 'Strzała znika w mroku.');
+    }
+    if (id === 'snare') { dmg = rollDamage([1,4], mod(effectiveAttr('dex'))); combat.enemy.hpNow -= dmg; addStatus(combat.enemyStatuses,'stun',1,1); logCombat(`Sidła zaciskają się i zadają ${dmg}.`); }
+    abilityMenu = false;
+    itemMenu = false;
+    if (combat.enemy.hpNow <= 0) winCombat(); else endPlayerTurn();
+  }
+
+  function canPlayerAct() { return combat && mode === 'combat' && combat.turn === 'player'; }
+  function endPlayerTurn() {
+    if (!combat) return;
+    combat.turn = 'enemy';
+    combat.nextEnemyAt = performance.now() + 720;
+  }
+  function beginPlayerTurn() {
+    if (!combat) return;
+    combat.turn = 'player';
+    const stunned = tickStatuses('player');
+    if (!combat || mode !== 'combat') return;
+    if (stunned) endPlayerTurn();
+  }
+  function enemyTurn() {
+    if (!combat || combat.turn !== 'enemy') return;
+    const stunned = tickStatuses('enemy');
+    if (!combat || mode !== 'combat') return;
+    if (stunned) { combat.nextEnemyAt = 0; beginPlayerTurn(); return; }
+    const e = combat.enemy;
+    const d = derivedStats();
+    const dodge = combat.playerStatuses.find(s => s.type === 'dodge');
+    if (dodge) {
+      dodge.turns = 0;
+      logCombat('Unikasz ataku w ostatniej chwili.');
+      combat.playerStatuses = combat.playerStatuses.filter(s => s.turns > 0);
+      beginPlayerTurn();
+      return;
+    }
+    const r = attackRoll(e.attack, d.defense);
+    diceBanner = { roll: r.roll, bonus: e.attack, total: r.total, dc: d.defense, label: 'Obrona', success: !r.hit, until: performance.now() + 1800 };
+    if (!r.hit) logCombat(`${e.name} chybia.`);
+    else {
+      let dmg = rollDamage(e.dice, e.elite ? 1 : 0);
+      if (r.crit) dmg *= 2;
+      const guard = combat.playerStatuses.find(s => s.type === 'guard');
+      const ward = combat.playerStatuses.find(s => s.type === 'ward');
+      if (guard) dmg = Math.max(0, dmg - guard.potency);
+      if (ward) dmg = Math.max(0, dmg - ward.potency);
+      player.hp -= dmg;
+      logCombat(`${r.crit ? 'Krytyczne trafienie! ' : ''}${e.name} zadaje ${dmg}.`);
+      if (e.status && Math.random() < e.statusChance) {
+        if (!(e.status === 'poison' && itemBonus('poisonRes'))) {
+          addStatus(combat.playerStatuses, e.status, e.status === 'stun' ? 1 : 3, e.elite ? 2 : 1);
+          logCombat(`Stan: ${statusName(e.status)}.`);
+        }
+      }
+    }
+    if (player.hp <= 0) {
+      if (player.origin === 'ashes' && !combat.originSaveUsed) {
+        combat.originSaveUsed = true;
+        player.hp = 1;
+        logCombat('Ostatni żar nie pozwala ci upaść.');
+        addToast('Ostatni żar: pozostajesz przy 1 HP.', '#e0a353', 3.2);
+      } else { handlePlayerDefeat(); return; }
+    }
+    beginPlayerTurn();
+  }
+
+  function tryFlee() {
+    if (!canPlayerAct()) return;
+    if (combat.enemy.boss) {
+      addToast('Korona zamyka wszystkie drogi odwrotu.', '#c17b72', 2.8);
+      return;
+    }
+    const extraBonus = player.origin === 'exile' ? 2 : 0;
+    const bonus = mod(effectiveAttr('dex')) + extraBonus;
+    const dc = 11 + (combat.enemy.elite ? 3 : 0);
+    skillCheck('dex', dc, 'Ucieczka', () => {
+      combat.fled = true;
+      addToast('Uciekasz w mgłę.', '#a8bbb7');
+      combat = null;
+      setMode('explore');
+      player.x -= Math.cos(stepClock) * 20;
+      player.y -= Math.sin(stepClock) * 20;
+    }, () => { logCombat(`Droga odwrotu zamknięta (premia ${formatSigned(bonus)}).`); endPlayerTurn(); }, extraBonus);
+  }
+
+  function combatConsumables() {
+    return ['health_potion', 'greater_potion', 'focus_tonic', 'antidote'].filter(id => hasItem(id));
+  }
+
+  function winCombat() {
+    if (!combat) return;
+    const won = combat;
+    const e = won.enemy;
+    persistent.enemiesDead[enemyStateKey(won.regionId, won.enemyId)] = true;
+    const gold = randInt(e.gold[0], e.gold[1]);
+    player.gold += gold;
+    gainXP(e.xp, e.name);
+    if (Math.random() < .28) addItem('health_potion');
+    if (Math.random() < .32) addItem('bone_token');
+    if (won.enemyType === 'sealGuardian' && !hasItem('vhal_seal')) {
+      addItem('vhal_seal');
+      player.quest = 'Otwórz Kryptę Zmierzchu i poznaj los Bezimiennego Króla.';
+      addToast('Zdobyto legendarną Pieczęć Vhal.', '#e2ba55', 4.2);
+    }
+    if (won.enemyType === 'nameless') {
+      addItem('king_ember');
+      player.flags.gameComplete = true;
+      player.quest = 'Finał etapu I ukończony. Zbadaj pozostałe sekrety albo wróć do osady.';
+    }
+    combat = null;
+    setMode('explore');
+    player.hp = Math.max(1, player.hp);
+    addToast(`Zwycięstwo. +${gold} monet.`, '#d0b768', 3.2);
+    if (won.enemyType === 'nameless') {
+      openModal('Koniec pierwszej wyprawy', 'Korona rozpada się w popiół, lecz pod kryptą coś nadal oddycha. Zdobywasz Żar Bezimiennego Króla. Etap I kampanii został ukończony — świat pozostaje otwarty do dalszej eksploracji.', [
+        { label: 'Zapisz zwycięstwo', action: () => { persistent.special.endingSeen = true; saveGame('ukończenie etapu I'); closeModal(); } }
+      ]);
+    } else maybeOpenLevelUp();
+  }
+
+  function handlePlayerDefeat() {
+    setMode('gameover');
+  }
+  function respawnAtVillage() {
+    combat = null;
+    currentRegionId = 0;
+    player.x = 24*TILE+8;
+    player.y = 34*TILE+8;
+    player.gold = Math.max(0, player.gold - Math.min(12, Math.floor(player.gold * .2)));
+    recalcVitals(true);
+    setMode('explore');
+    addToast('Budzisz się przy Kapliczce Żaru.', '#b8a76b', 3.2);
+    saveGame('odrodzenie');
+  }
+
+  // ---------------------------------------------------------------------------
+  // ZAPIS I ODCZYT
+  // ---------------------------------------------------------------------------
+  function buildSavePayload() {
+    if (!player || !persistent) return null;
+    for (const reg of world) persistent.fog[reg.id] = encodeFog(reg);
+    return {
+      version: SAVE_VERSION,
+      savedAt: new Date().toISOString(),
+      gameTime,
+      currentRegionId,
+      player,
+      persistent
+    };
+  }
+  function saveGame(reason = 'ręczny zapis') {
+    try {
+      const payload = buildSavePayload();
+      if (!payload) return false;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      autosaveFlash = 1.7;
+      addToast(`Zapisano — ${reason}.`, '#8fb0a2', 1.8);
+      return true;
+    } catch (err) {
+      console.error('Błąd zapisu:', err);
+      addToast('Nie udało się zapisać gry.', '#c46f70', 3);
+      return false;
+    }
+  }
+  function hasSave() {
+    try { return !!localStorage.getItem(SAVE_KEY); } catch (_) { return false; }
+  }
+  function loadGame() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || data.version !== SAVE_VERSION || !data.player || !data.persistent) throw new Error('Nieprawidłowy format zapisu');
+      player = data.player;
+      persistent = data.persistent;
+      gameTime = Number.isFinite(data.gameTime) ? data.gameTime : 62;
+      currentRegionId = clamp(data.currentRegionId | 0, 0, REGION_DEFS.length - 1);
+      player.inventory ||= {};
+      player.equipment ||= { weapon: CLASSES[player.classId].weapon, armor: CLASSES[player.classId].armor, artifact: null };
+      player.flags ||= {};
+      player.quickSlots ||= ['health_potion','focus_tonic'];
+      player.weaponUpgrade ||= 0;
+      player.levelPoints ||= 0;
+      persistent.discoveredRegions ||= { 0: true };
+      persistent.enemiesDead ||= {};
+      persistent.objects ||= {};
+      persistent.fog ||= {};
+      persistent.special ||= {};
+      world = buildWorld();
+      recalcVitals(false);
+      setMode('explore');
+      addToast('Wczytano zapis gry.', '#8fb0a2', 2.5);
+      return true;
+    } catch (err) {
+      console.error('Błąd odczytu:', err);
+      addToast('Zapis jest uszkodzony lub niezgodny.', '#c46f70', 3.5);
+      return false;
+    }
+  }
+  function deleteSave() {
+    try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+    addToast('Usunięto zapis.', '#b69a8d');
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && player && mode !== 'title' && mode !== 'creator') saveGame('zamknięcie gry'); });
+
+  // ---------------------------------------------------------------------------
+  // STEROWANIE
+  // ---------------------------------------------------------------------------
+  function movementVector() {
+    let x = 0, y = 0;
+    if (keys.ArrowLeft || keys.KeyA || touchDir.left) x--;
+    if (keys.ArrowRight || keys.KeyD || touchDir.right) x++;
+    if (keys.ArrowUp || keys.KeyW || touchDir.up) y--;
+    if (keys.ArrowDown || keys.KeyS || touchDir.down) y++;
+    if (x && y) { x *= .7071; y *= .7071; }
+    return { x, y };
+  }
+
+  function exploreAttack() {
+    if (mode !== 'explore') return;
+    attackAnim = .28;
+    const reg = currentRegion();
+    const nearby = reg.enemies.filter(e => !isEnemyDead(reg.id,e.id) && Math.hypot(e.x-player.x,e.y-player.y) < 34).sort((a,b)=>dist(a,player)-dist(b,player))[0];
+    if (nearby) startCombat(nearby);
+    else addToast('Ostrze przecina mgłę.', '#9fa29c', 1.2);
+  }
+
+  function quickAction(name) {
+    if (name === 'attack') exploreAttack();
+    if (name === 'interact') interact();
+    if (name === 'inventory' && mode === 'explore') { selectedItemId = inventoryIds()[0] || null; inventoryPage = 0; setMode('inventory'); }
+    if (name === 'map' && mode === 'explore') setMode('map');
+  }
+
+  document.querySelectorAll('[data-dir]').forEach(btn => {
+    const dir = btn.dataset.dir;
+    const on = e => { e.preventDefault(); touchDir[dir] = true; btn.classList.add('active'); try { btn.setPointerCapture(e.pointerId); } catch (_) {} };
+    const off = e => { e.preventDefault(); touchDir[dir] = false; btn.classList.remove('active'); };
+    btn.addEventListener('pointerdown', on);
+    btn.addEventListener('pointerup', off);
+    btn.addEventListener('pointercancel', off);
+    btn.addEventListener('lostpointercapture', off);
+  });
+  document.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('pointerdown', e => { e.preventDefault(); btn.classList.add('active'); quickAction(btn.dataset.action); });
+    const off = e => { e.preventDefault(); btn.classList.remove('active'); };
+    btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('pointerleave', off);
+  });
+
+  addEventListener('keydown', e => {
