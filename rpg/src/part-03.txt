@@ -1,0 +1,239 @@
+      for (let y = 7; y < REGION_H - 6; y += 6) for (let x = 5; x < REGION_W - 4; x += 5) if ((x + y) % 3) setTile(reg, x, y, TILE_KIND.BLOCK);
+    }
+  }
+
+  function gridCryptRooms(reg) {
+    fillRectTiles(reg, 2, 2, REGION_W - 4, REGION_H - 4, TILE_KIND.WALL);
+    const rooms = [[4,4,17,15],[27,4,17,15],[4,24,17,14],[27,24,17,14],[13,43,22,9]];
+    for (const [x,y,w,h] of rooms) fillRectTiles(reg, x, y, w, h, TILE_KIND.FLOOR);
+    fillRectTiles(reg, 20, 10, 8, 4, TILE_KIND.FLOOR);
+    fillRectTiles(reg, 10, 18, 4, 7, TILE_KIND.FLOOR);
+    fillRectTiles(reg, 34, 18, 4, 7, TILE_KIND.FLOOR);
+    fillRectTiles(reg, 20, 30, 8, 4, TILE_KIND.FLOOR);
+    fillRectTiles(reg, 22, 37, 4, 8, TILE_KIND.FLOOR);
+  }
+
+  function carveRoutes(reg) {
+    // Główne trasy gwarantują przejście między bramami i centrum.
+    const cx = 24, cy = 28;
+    for (let x = 1; x < REGION_W - 1; x++) for (let o = -1; o <= 1; o++) setTile(reg, x, cy + o, reg.biome === 'settlement' ? TILE_KIND.ROAD : TILE_KIND.GROUND);
+    for (let y = 1; y < REGION_H - 1; y++) for (let o = -1; o <= 1; o++) setTile(reg, cx + o, y, reg.biome === 'settlement' ? TILE_KIND.ROAD : TILE_KIND.GROUND);
+    clearArea(reg, cx, cy, 4, reg.biome === 'settlement' ? TILE_KIND.ROAD : TILE_KIND.GROUND);
+    for (const exit of reg.exits) {
+      if (exit.side === 'north') for (let x = cx - 1; x <= cx + 1; x++) setTile(reg, x, 0, TILE_KIND.GROUND);
+      if (exit.side === 'south') for (let x = cx - 1; x <= cx + 1; x++) setTile(reg, x, REGION_H - 1, TILE_KIND.GROUND);
+      if (exit.side === 'west') for (let y = cy - 1; y <= cy + 1; y++) setTile(reg, 0, y, TILE_KIND.GROUND);
+      if (exit.side === 'east') for (let y = cy - 1; y <= cy + 1; y++) setTile(reg, REGION_W - 1, y, TILE_KIND.GROUND);
+    }
+  }
+
+  function makeEnemy(reg, id, type, tx, ty, opts = {}) {
+    clearArea(reg, tx, ty, 1);
+    reg.enemies.push({ id, type, x: tx * TILE + 8, y: ty * TILE + 8, baseX: tx * TILE + 8, baseY: ty * TILE + 8, dir: 'down', phase: hash2(tx,ty,reg.seed) * TAU, boss: !!opts.boss });
+  }
+  function makeObject(reg, id, type, tx, ty, data = {}) {
+    clearArea(reg, tx, ty, 1);
+    reg.objects.push({ id, type, x: tx * TILE + 8, y: ty * TILE + 8, tx, ty, ...data });
+  }
+  function makeNpc(reg, id, role, name, tx, ty) {
+    clearArea(reg, tx, ty, 1, TILE_KIND.ROAD);
+    reg.npcs.push({ id, role, name, x: tx * TILE + 8, y: ty * TILE + 8, phase: hash2(tx,ty,42) * TAU });
+  }
+
+  function addRegionContent(reg) {
+    if (reg.id === 0) {
+      makeNpc(reg, 'merchant', 'merchant', 'Kramarz Odo', 17, 27);
+      makeNpc(reg, 'herbalist', 'herbalist', 'Zielarka Mira', 31, 28);
+      makeNpc(reg, 'smith', 'smith', 'Kowal Borun', 24, 22);
+      makeNpc(reg, 'wanderer', 'wanderer', 'Wędrowiec bez twarzy', 24, 33);
+      makeObject(reg, 'well_note', 'note', 20, 33, { title: 'Napis na studni', text: '„Nie pij wody po zmierzchu. Wtedy studnia pamięta twarze zmarłych.”' });
+      makeObject(reg, 'village_shrine', 'shrine', 24, 15, { title: 'Kapliczka Żaru', text: 'W kamieniu tli się ciepło, którego nie powinno tu być.' });
+      for (const [i,x,y] of [[0,20,25],[1,28,25],[2,20,31],[3,28,31]]) reg.torches.push({ id: `t${i}`, x:x*TILE+8, y:y*TILE+8 });
+    }
+    if (reg.id === 1) {
+      makeEnemy(reg, 'cem_wisp_1', 'wisp', 13, 16);
+      makeEnemy(reg, 'cem_hound_1', 'graveHound', 36, 18);
+      makeEnemy(reg, 'cem_hound_2', 'graveHound', 16, 42);
+      makeObject(reg, 'cem_note', 'note', 34, 38, { title: 'Kamienna inskrypcja', text: '„Kruk nie przynosi śmierci. Kruk tylko pierwszy ją zauważa.”' });
+      makeObject(reg, 'cem_chest', 'chest', 8, 11, { dc: 10, attr: 'str', loot: ['health_potion', 'bone_token'] });
+      makeObject(reg, 'cem_shrine', 'shrine', 38, 46, { title: 'Kapliczka Ciszy', text: 'Gdy dotykasz kamienia, wszystkie odgłosy na chwilę znikają.' });
+      reg.torches.push({ id:'cem_t', x:38*TILE+8, y:46*TILE+8 });
+    }
+    if (reg.id === 2) {
+      makeEnemy(reg, 'for_root_1', 'rootling', 13, 14);
+      makeEnemy(reg, 'for_root_2', 'rootling', 36, 19);
+      makeEnemy(reg, 'for_wisp_1', 'wisp', 32, 43);
+      makeObject(reg, 'for_note', 'note', 10, 43, { title: 'Kora pełna znaków', text: 'Ktoś wyrył mapę, lecz wszystkie drogi prowadzą do jednego, czarnego drzewa.' });
+      makeObject(reg, 'for_chest', 'chest', 39, 10, { dc: 12, attr: 'dex', loot: ['moon_knife', 'health_potion'] });
+      makeObject(reg, 'for_shrine', 'shrine', 7, 12, { title: 'Korzenna kapliczka', text: 'Korzenie oplatają małą figurę bez twarzy.' });
+    }
+    if (reg.id === 3) {
+      makeEnemy(reg, 'sw_shade_1', 'bogShade', 12, 14);
+      makeEnemy(reg, 'sw_shade_2', 'bogShade', 37, 15);
+      makeEnemy(reg, 'sw_root_1', 'rootling', 35, 43);
+      makeObject(reg, 'sw_note', 'note', 9, 42, { title: 'Mokra kartka', text: '„Vhal zamknęło bramy nie przed armią, lecz przed własnym królem.” Atrament wciąż jest świeży.' });
+      makeObject(reg, 'sw_chest', 'chest', 40, 46, { dc: 12, attr: 'wil', loot: ['swamp_charm', 'antidote'] });
+      makeObject(reg, 'sw_shrine', 'shrine', 8, 10, { title: 'Ołtarzyk topielców', text: 'Na kamieniu leży sucha gałązka mięty.' });
+    }
+    if (reg.id === 4) {
+      makeEnemy(reg, 'ru_hollow_1', 'hollow', 13, 16);
+      makeEnemy(reg, 'ru_hollow_2', 'hollow', 35, 18);
+      makeEnemy(reg, 'ru_guardian', 'sealGuardian', 34, 43);
+      makeObject(reg, 'ru_note', 'note', 11, 41, { title: 'Dziennik strażnika', text: '„Pieczęć zabrano do sali południowej. Król rozkazał, by nikt nie schodził za nią do krypty.”' });
+      makeObject(reg, 'ru_chest', 'chest', 39, 10, { dc: 14, attr: 'int', loot: ['vhal_plate', 'greater_potion'] });
+      // Sekretna komnata w północno-zachodnim domu.
+      setTile(reg, 17, 11, TILE_KIND.WALL);
+      makeObject(reg, 'ru_secret', 'secret', 17, 11, { dc: 13, doorX: 17, doorX2: 16, doorY: 11, text: 'W cieniu muru dostrzegasz linię chłodniejszą od kamienia.' });
+      makeObject(reg, 'ru_secret_chest', 'chest', 13, 11, { dc: 9, attr: 'dex', loot: ['frost_wand', 'focus_tonic'], hiddenBy: 'ru_secret' });
+      reg.torches.push({ id:'ru_t1', x:30*TILE+8, y:40*TILE+8 });
+      reg.torches.push({ id:'ru_t2', x:38*TILE+8, y:40*TILE+8 });
+    }
+    if (reg.id === 5) {
+      makeEnemy(reg, 'cr_bone_1', 'boneSentinel', 12, 12);
+      makeEnemy(reg, 'cr_bone_2', 'boneSentinel', 36, 12);
+      makeEnemy(reg, 'cr_bone_3', 'boneSentinel', 12, 30);
+      makeEnemy(reg, 'cr_king', 'nameless', 24, 48, { boss: true });
+      makeObject(reg, 'cr_note', 'note', 35, 31, { title: 'Ostatnia tablica Vhal', text: '„Nie koronowaliśmy człowieka. Koronowaliśmy głód, a potem nazwaliśmy go królem.”' });
+      makeObject(reg, 'cr_chest', 'chest', 36, 30, { dc: 14, attr: 'str', loot: ['iron_sword', 'greater_potion'] });
+      makeObject(reg, 'cr_shrine', 'shrine', 24, 45, { title: 'Wygasły tron', text: 'Pod kamieniem pulsuje pojedynczy, czerwony żar.' });
+      for (const [i,x,y] of [[0,20,46],[1,28,46],[2,20,50],[3,28,50]]) reg.torches.push({ id:`cr_t${i}`, x:x*TILE+8, y:y*TILE+8 });
+    }
+  }
+
+  function objectStateKey(regId, objId) { return `${regId}:${objId}`; }
+  function enemyStateKey(regId, enemyId) { return `${regId}:${enemyId}`; }
+  function isObjectDone(regId, objId) { return !!persistent.objects[objectStateKey(regId, objId)]; }
+  function setObjectDone(regId, objId, value = true) { persistent.objects[objectStateKey(regId, objId)] = value; }
+  function isEnemyDead(regId, enemyId) { return !!persistent.enemiesDead[enemyStateKey(regId, enemyId)]; }
+
+  function restoreFog(reg) {
+    const encoded = persistent && persistent.fog ? persistent.fog[reg.id] : null;
+    if (!encoded) return;
+    try {
+      const raw = atob(encoded);
+      for (let i = 0; i < reg.explored.length; i++) {
+        const byte = raw.charCodeAt(i >> 3) || 0;
+        reg.explored[i] = (byte >> (i & 7)) & 1;
+      }
+    } catch (_) { /* Stary lub uszkodzony zapis nie blokuje gry. */ }
+  }
+  function encodeFog(reg) {
+    const bytes = new Uint8Array(Math.ceil(reg.explored.length / 8));
+    for (let i = 0; i < reg.explored.length; i++) if (reg.explored[i]) bytes[i >> 3] |= 1 << (i & 7);
+    let raw = '';
+    for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
+    return btoa(raw);
+  }
+
+  function currentRegion() { return world[currentRegionId]; }
+  function tileBlocked(kind) { return kind === TILE_KIND.BLOCK || kind === TILE_KIND.WATER || kind === TILE_KIND.WALL; }
+  function positionBlocked(reg, x, y, radius = 5) {
+    const pts = [[x-radius,y-radius],[x+radius,y-radius],[x-radius,y+radius],[x+radius,y+radius]];
+    return pts.some(([pxx, pyy]) => tileBlocked(getTile(reg, Math.floor(pxx / TILE), Math.floor(pyy / TILE))));
+  }
+
+  function revealAroundPlayer(force = false) {
+    if (!world.length || !player) return;
+    const reg = currentRegion();
+    const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+    const radius = player.race === 'cursed' ? 7 : 6;
+    for (let y = ty - radius; y <= ty + radius; y++) for (let x = tx - radius; x <= tx + radius; x++) {
+      if (x >= 0 && y >= 0 && x < REGION_W && y < REGION_H && Math.hypot(x - tx, y - ty) <= radius + .4) reg.explored[y * REGION_W + x] = 1;
+    }
+    if (force) persistent.fog[reg.id] = encodeFog(reg);
+  }
+
+  function gateAt(reg, tx, ty) {
+    if (ty === 0) return reg.exits.find(e => e.side === 'north');
+    if (ty === REGION_H - 1) return reg.exits.find(e => e.side === 'south');
+    if (tx === 0) return reg.exits.find(e => e.side === 'west');
+    if (tx === REGION_W - 1) return reg.exits.find(e => e.side === 'east');
+    return null;
+  }
+
+  function attemptTransition() {
+    if (transitionLock > 0) return;
+    const reg = currentRegion();
+    const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+    const gate = gateAt(reg, tx, ty);
+    if (!gate) return;
+    if (gate.target === 5 && !hasItem('vhal_seal')) {
+      transitionLock = .9;
+      if (gate.side === 'east') player.x -= TILE * 2;
+      if (gate.side === 'south') player.y -= TILE * 2;
+      if (gate.side === 'west') player.x += TILE * 2;
+      if (gate.side === 'north') player.y += TILE * 2;
+      openModal('Zapieczętowane zejście', 'Kamienne drzwi odpowiadają tylko głuchym echem. W ich zagłębieniu brakuje Pieczęci Vhal.', [{ label: 'Wróć', action: () => closeModal() }]);
+      return;
+    }
+    transitionTo(gate.target, gate.side);
+  }
+
+  function transitionTo(targetId, fromSide) {
+    const old = currentRegion();
+    persistent.fog[old.id] = encodeFog(old);
+    currentRegionId = targetId;
+    const reg = currentRegion();
+    if (fromSide === 'north') { player.x = 24 * TILE + 8; player.y = (REGION_H - 3) * TILE + 8; }
+    if (fromSide === 'south') { player.x = 24 * TILE + 8; player.y = 2 * TILE + 8; }
+    if (fromSide === 'west') { player.x = (REGION_W - 3) * TILE + 8; player.y = 28 * TILE + 8; }
+    if (fromSide === 'east') { player.x = 2 * TILE + 8; player.y = 28 * TILE + 8; }
+    transitionLock = .8;
+    if (!persistent.discoveredRegions[targetId]) {
+      persistent.discoveredRegions[targetId] = true;
+      gainXP(20 + reg.danger * 5, `odkrycie: ${reg.name}`);
+      addToast(`Odkryto: ${reg.name}`, '#c9b56d', 3.4);
+    } else addToast(reg.name, '#c9c5b8', 2.2);
+    revealAroundPlayer(true);
+    saveGame('zmiana lokacji');
+  }
+
+  // ---------------------------------------------------------------------------
+  // STATYSTYKI, EKWIPUNEK I POSTĘP
+  // ---------------------------------------------------------------------------
+  function itemBonus(key) {
+    let total = 0;
+    for (const slot of ['weapon','armor','artifact']) {
+      const id = player.equipment[slot];
+      if (id && ITEMS[id] && ITEMS[id][key]) total += ITEMS[id][key];
+    }
+    return total;
+  }
+  function effectiveAttr(key) { return player.attrs[key] + itemBonus(key); }
+  function derivedStats() {
+    const cl = CLASSES[player.classId];
+    const weapon = ITEMS[player.equipment.weapon] || ITEMS.rust_sword;
+    const armor = ITEMS[player.equipment.armor] || { defense: 0 };
+    const maxHp = cl.hp + effectiveAttr('con') * 2 + (player.level - 1) * 5 + itemBonus('maxHp');
+    const maxResource = cl.res + Math.max(0, mod(player.classId === 'mage' ? effectiveAttr('int') : effectiveAttr('con'))) * 2 + (player.level - 1) * 2 + itemBonus('maxRes');
+    const stat = weapon.stat || 'str';
+    return {
+      maxHp: Math.max(12, maxHp),
+      maxResource: Math.max(8, maxResource),
+      defense: 10 + mod(effectiveAttr('dex')) + (armor.defense || 0),
+      attack: player.level + mod(effectiveAttr(stat)) + (weapon.attack || 0) + player.weaponUpgrade,
+      damageMod: Math.max(0, mod(effectiveAttr(stat))) + player.weaponUpgrade,
+      initiative: mod(effectiveAttr('dex')),
+      weapon,
+      resourceName: cl.resource
+    };
+  }
+  function recalcVitals(full = false) {
+    const d = derivedStats();
+    if (full) { player.hp = d.maxHp; player.resource = d.maxResource; }
+    else { player.hp = clamp(player.hp, 0, d.maxHp); player.resource = clamp(player.resource, 0, d.maxResource); }
+  }
+  function addItem(id, qty = 1) {
+    if (!ITEMS[id]) return;
+    player.inventory[id] = (player.inventory[id] || 0) + qty;
+    if (player.inventory[id] <= 0) delete player.inventory[id];
+  }
+  function hasItem(id, qty = 1) { return (player.inventory[id] || 0) >= qty; }
+  function removeItem(id, qty = 1) { if (!hasItem(id, qty)) return false; addItem(id, -qty); return true; }
+  function inventoryIds() { return Object.keys(player.inventory).filter(id => player.inventory[id] > 0); }
+
+  function equipItem(id) {
+    const item = ITEMS[id];
+    if (!item || !item.slot || !hasItem(id)) return;
+    player.equipment[item.slot] = id;
+    recalcVitals(false);
